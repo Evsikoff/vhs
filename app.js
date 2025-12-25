@@ -278,14 +278,15 @@ class VHSTraderGame {
     offerFilm() {
         if (this.selectedSlot === null || !this.currentRequest) return;
 
-        const film = this.shelf[this.selectedSlot];
+        const slotIndex = this.selectedSlot;
+        const film = this.shelf[slotIndex];
         const isMatch = this.currentRequest.linkedFilmIds.includes(film.id);
 
         this.closeFilmModal();
 
         if (isMatch) {
             // Success!
-            this.handleSale(film, this.selectedSlot);
+            this.handleSale(film, slotIndex);
         } else {
             // Fail
             this.handleRejection();

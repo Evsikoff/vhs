@@ -44,6 +44,8 @@ class VHSTraderGame {
 
         this.isShowingAd = false;
 
+        this.initialGameplaySessionStarted = false;
+
         // DOM elements
         this.initializeDOM();
         this.bindEvents();
@@ -189,7 +191,12 @@ class VHSTraderGame {
         } catch (e) {
             console.warn('Не удалось сообщить о готовности загрузки', e);
         }
+    }
 
+    startInitialGameplaySession() {
+        if (this.initialGameplaySessionStarted) return;
+
+        this.initialGameplaySessionStarted = true;
         this.startGameplaySession();
     }
 
@@ -324,6 +331,7 @@ class VHSTraderGame {
     // ==========================================
 
     startDay() {
+        this.startInitialGameplaySession();
         this.isDay = true;
         this.currentCustomerIndex = 0;
 
@@ -723,6 +731,8 @@ class VHSTraderGame {
     restartGame() {
         // Clear saved progress
         this.clearProgress();
+
+        this.startInitialGameplaySession();
 
         // Reset all state
         this.balance = 0;

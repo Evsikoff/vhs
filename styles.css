@@ -395,6 +395,18 @@ body {
     box-shadow: 0 0 20px rgba(5, 217, 232, 0.6);
 }
 
+.btn-danger {
+    background: transparent;
+    color: #ff6b6b;
+    border: 2px solid #ff6b6b;
+}
+
+.btn-danger:hover {
+    background: #ff6b6b;
+    color: var(--bg-dark);
+    box-shadow: 0 0 20px rgba(255, 107, 107, 0.6);
+}
+
 /* === MODALS === */
 .modal {
     position: fixed;

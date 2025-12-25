@@ -29,10 +29,26 @@ class VHSTraderGame {
         // Storage key
         this.STORAGE_KEY = 'vhs_trader_save';
 
+        // Yandex SDK
+        this.ysdk = null;
+        this.player = null;
+        this.canReadCloudSaves = false;
+        this.canWriteCloudSaves = false;
+
+        // Loading state
+        this.loadingOverlay = null;
+        this.loadingStatusEl = null;
+        this.loadingStartTime = 0;
+        this.MIN_LOADING_TIME = 2000;
+        this.loadingReadyReported = false;
+
+        this.isShowingAd = false;
+
         // DOM elements
         this.initializeDOM();
         this.bindEvents();
-        this.initializeGame();
+        this.preventTextSelectionAndContextMenu();
+        this.initializeGame().catch((e) => console.error('Ошибка инициализации игры', e));
     }
 
     initializeDOM() {
@@ -83,6 +99,10 @@ class VHSTraderGame {
         // Victory
         this.victoryMessage = document.getElementById('victory-message');
         this.btnRestart = document.getElementById('btn-restart');
+
+        // Loading
+        this.loadingOverlay = document.getElementById('loading-overlay');
+        this.loadingStatusEl = document.getElementById('loading-status');
     }
 
     bindEvents() {
@@ -94,34 +114,154 @@ class VHSTraderGame {
         this.btnOffer.addEventListener('click', () => this.offerFilm());
         this.btnCloseModal.addEventListener('click', () => this.closeFilmModal());
 
-        this.btnCloseShop.addEventListener('click', () => this.closeShop());
+        this.btnCloseShop.addEventListener('click', () => this.handleFinishPurchase());
         this.filterGenre.addEventListener('change', () => this.renderShopCatalog());
         this.filterPrice.addEventListener('change', () => this.renderShopCatalog());
 
         this.btnRestart.addEventListener('click', () => this.restartGame());
     }
 
-    initializeGame() {
-        // Try to load saved progress
-        if (this.loadProgress()) {
-            // Progress loaded successfully
+    preventTextSelectionAndContextMenu() {
+        document.addEventListener('contextmenu', (event) => event.preventDefault());
+    }
+
+    async initializeGame() {
+        this.showLoadingScreen('Подключение к сервисам Яндекса');
+        await this.initYandexSDK();
+
+        this.updateLoadingStatus('Загружаем прогресс игрока');
+        const progressLoaded = await this.loadProgress();
+        if (progressLoaded) {
             this.customerRequestEl.textContent = `День ${this.day}. Нажмите "Начать день" чтобы открыть магазин.`;
         } else {
-            // No saved progress - start fresh
-            // Generate random shop order for this playthrough
-            this.shopFilmOrder = [...FILMS].sort(() => Math.random() - 0.5).map(f => f.id);
-
-            // Fill initial shelf with first 10 films from shuffled order
-            for (let i = 0; i < 10; i++) {
-                const film = FILMS.find(f => f.id === this.shopFilmOrder[i]);
-                this.shelf.push(film);
-                this.ownedFilms.add(film.id);
-            }
+            this.prepareNewRun();
         }
 
         this.populateGenreFilter();
         this.renderShelf();
         this.updateStats();
+
+        this.updateLoadingStatus('Магазин готовится к открытию');
+        await this.finishLoadingScreen('Магазин готов к работе');
+    }
+
+    showLoadingScreen(statusText = '') {
+        this.loadingStartTime = performance.now();
+        if (this.loadingStatusEl && statusText) {
+            this.loadingStatusEl.textContent = statusText;
+        }
+        if (this.loadingOverlay) {
+            this.loadingOverlay.classList.add('visible');
+        }
+    }
+
+    updateLoadingStatus(statusText) {
+        if (this.loadingStatusEl && statusText) {
+            this.loadingStatusEl.textContent = statusText;
+        }
+    }
+
+    async finishLoadingScreen(statusText = '') {
+        if (this.loadingStatusEl && statusText) {
+            this.loadingStatusEl.textContent = statusText;
+        }
+
+        const elapsed = performance.now() - this.loadingStartTime;
+        const remaining = Math.max(this.MIN_LOADING_TIME - elapsed, 0);
+
+        await new Promise(resolve => setTimeout(resolve, remaining));
+
+        if (this.loadingOverlay) {
+            this.loadingOverlay.classList.remove('visible');
+        }
+
+        this.signalLoadingReady();
+    }
+
+    signalLoadingReady() {
+        if (this.loadingReadyReported) return;
+        this.loadingReadyReported = true;
+
+        try {
+            if (this.ysdk?.features?.LoadingAPI?.ready) {
+                this.ysdk.features.LoadingAPI.ready();
+            }
+        } catch (e) {
+            console.warn('Не удалось сообщить о готовности загрузки', e);
+        }
+
+        this.startGameplaySession();
+    }
+
+    startGameplaySession() {
+        try {
+            this.ysdk?.features?.GameplayAPI?.start?.();
+        } catch (e) {
+            console.warn('Не удалось запустить игровую сессию', e);
+        }
+    }
+
+    stopGameplaySession() {
+        try {
+            this.ysdk?.features?.GameplayAPI?.stop?.();
+        } catch (e) {
+            console.warn('Не удалось остановить игровую сессию', e);
+        }
+    }
+
+    async initYandexSDK() {
+        if (this.ysdk || typeof YaGames === 'undefined') {
+            return;
+        }
+
+        try {
+            this.ysdk = await YaGames.init();
+
+            if (this.ysdk?.environment?.i18n) {
+                const langSetter = this.ysdk.environment.i18n.lang;
+                if (typeof langSetter === 'function') {
+                    langSetter('ru');
+                } else {
+                    this.ysdk.environment.i18n.lang = 'ru';
+                }
+            }
+
+            await this.setupPlayer();
+        } catch (e) {
+            console.warn('Не удалось инициализировать Yandex SDK', e);
+        }
+    }
+
+    async setupPlayer() {
+        if (!this.ysdk?.getPlayer) return;
+
+        try {
+            this.player = await this.ysdk.getPlayer({ scopes: true });
+        } catch (primaryError) {
+            console.warn('Полный доступ к игроку недоступен, пробуем ограниченный режим', primaryError);
+            try {
+                this.player = await this.ysdk.getPlayer({ scopes: false });
+            } catch (secondaryError) {
+                console.warn('Не удалось получить данные игрока', secondaryError);
+            }
+        }
+
+        this.canReadCloudSaves = !!(this.player && typeof this.player.getData === 'function');
+        this.canWriteCloudSaves = !!(this.player && typeof this.player.setData === 'function');
+    }
+
+    prepareNewRun() {
+        this.shopFilmOrder = [...FILMS].sort(() => Math.random() - 0.5).map(f => f.id);
+        this.shelf = [];
+        this.ownedFilms = new Set();
+
+        for (let i = 0; i < 10; i++) {
+            const film = FILMS.find(f => f.id === this.shopFilmOrder[i]);
+            this.shelf.push(film);
+            this.ownedFilms.add(film.id);
+        }
+
+        this.customerRequestEl.textContent = 'Нажмите "Начать день" чтобы открыть магазин';
     }
 
     populateGenreFilter() {
@@ -486,6 +626,20 @@ class VHSTraderGame {
         this.renderShopCatalog();
         this.renderShelf();
         this.updateStats();
+        this.saveProgress();
+    }
+
+    async handleFinishPurchase() {
+        if (this.isShowingAd) return;
+
+        this.isShowingAd = true;
+        this.btnCloseShop.disabled = true;
+
+        await this.showFullscreenAd();
+
+        this.btnCloseShop.disabled = false;
+        this.isShowingAd = false;
+        this.closeShop();
     }
 
     closeShop() {
@@ -500,6 +654,43 @@ class VHSTraderGame {
         this.updateStats();
         // Save progress when new day starts
         this.saveProgress();
+    }
+
+    async showFullscreenAd() {
+        if (!this.ysdk?.adv?.showFullscreenAdv) {
+            return;
+        }
+
+        this.stopGameplaySession();
+
+        await new Promise(resolve => {
+            try {
+                this.ysdk.adv.showFullscreenAdv({
+                    callbacks: {
+                        onOpen: function () {
+                            // Действие после открытия рекламы.
+                        },
+                        onClose: (wasShown) => {
+                            this.startGameplaySession();
+                            resolve(wasShown);
+                        },
+                        onError: (error) => {
+                            console.warn('Ошибка показа рекламы:', error);
+                            this.startGameplaySession();
+                            resolve(error);
+                        },
+                    }
+                }).catch(error => {
+                    console.warn('Не удалось показать рекламу:', error);
+                    this.startGameplaySession();
+                    resolve(error);
+                });
+            } catch (e) {
+                console.warn('Не удалось инициировать показ рекламы:', e);
+                this.startGameplaySession();
+                resolve(e);
+            }
+        });
     }
 
     // ==========================================
@@ -549,13 +740,7 @@ class VHSTraderGame {
         this.isDay = false;
         this.isEvening = false;
 
-        // Reinitialize with new random shop order
-        this.shopFilmOrder = [...FILMS].sort(() => Math.random() - 0.5).map(f => f.id);
-        for (let i = 0; i < 10; i++) {
-            const film = FILMS.find(f => f.id === this.shopFilmOrder[i]);
-            this.shelf.push(film);
-            this.ownedFilms.add(film.id);
-        }
+        this.prepareNewRun();
 
         // Hide modals
         this.victoryModal.classList.add('hidden');
@@ -581,7 +766,13 @@ class VHSTraderGame {
     // ==========================================
 
     saveProgress() {
-        const saveData = {
+        const saveData = this.buildSaveData();
+        this.saveToLocal(saveData);
+        this.saveToCloud(saveData);
+    }
+
+    buildSaveData() {
+        return {
             balance: this.balance,
             day: this.day,
             soldTotal: this.soldTotal,
@@ -590,7 +781,91 @@ class VHSTraderGame {
             ownedFilms: [...this.ownedFilms],
             shopFilmOrder: this.shopFilmOrder
         };
+    }
 
+    applySaveData(saveData) {
+        this.balance = saveData.balance ?? 0;
+        this.day = saveData.day ?? 1;
+        this.soldTotal = saveData.soldTotal ?? 0;
+        this.soldUnique = new Set(saveData.soldUnique || []);
+        this.ownedFilms = new Set(saveData.ownedFilms || []);
+
+        if (Array.isArray(saveData.shopFilmOrder) && saveData.shopFilmOrder.length > 0) {
+            this.shopFilmOrder = saveData.shopFilmOrder;
+        } else {
+            this.shopFilmOrder = [...FILMS].sort(() => Math.random() - 0.5).map(f => f.id);
+        }
+
+        this.shelf = (saveData.shelf || []).map(filmId => {
+            if (filmId === null || typeof filmId === 'undefined') return null;
+            return FILMS.find(f => f.id === filmId) || null;
+        });
+
+        while (this.shelf.length < 10) {
+            this.shelf.push(null);
+        }
+
+        this.shelf.forEach(film => {
+            if (film) {
+                this.ownedFilms.add(film.id);
+            }
+        });
+    }
+
+    async loadProgress() {
+        const cloudData = await this.loadFromCloud();
+        if (cloudData) {
+            this.applySaveData(cloudData);
+            this.saveToLocal(cloudData);
+            return true;
+        }
+
+        const localData = this.loadFromLocal();
+        if (localData) {
+            this.applySaveData(localData);
+            return true;
+        }
+
+        return false;
+    }
+
+    async loadFromCloud() {
+        if (!this.canReadCloudSaves || !this.player) return null;
+
+        try {
+            const cloudData = await this.player.getData([this.STORAGE_KEY]);
+            const saveData = cloudData?.[this.STORAGE_KEY];
+
+            if (!saveData) return null;
+
+            if (typeof saveData === 'string') {
+                try {
+                    return JSON.parse(saveData);
+                } catch (e) {
+                    console.warn('Не удалось распарсить облачное сохранение', e);
+                    return null;
+                }
+            }
+
+            return saveData;
+        } catch (e) {
+            console.warn('Не удалось загрузить сохранение из облака', e);
+            return null;
+        }
+    }
+
+    loadFromLocal() {
+        try {
+            const saved = localStorage.getItem(this.STORAGE_KEY);
+            if (!saved) return null;
+            return JSON.parse(saved);
+        } catch (e) {
+            console.warn('Could not load progress:', e);
+            return null;
+        }
+    }
+
+    saveToLocal(saveData) {
         try {
             localStorage.setItem(this.STORAGE_KEY, JSON.stringify(saveData));
         } catch (e) {
@@ -598,31 +873,13 @@ class VHSTraderGame {
         }
     }
 
-    loadProgress() {
+    async saveToCloud(saveData) {
+        if (!this.canWriteCloudSaves || !this.player?.setData) return;
+
         try {
-            const saved = localStorage.getItem(this.STORAGE_KEY);
-            if (!saved) return false;
-
-            const saveData = JSON.parse(saved);
-
-            // Restore state
-            this.balance = saveData.balance;
-            this.day = saveData.day;
-            this.soldTotal = saveData.soldTotal;
-            this.soldUnique = new Set(saveData.soldUnique);
-            this.ownedFilms = new Set(saveData.ownedFilms);
-            this.shopFilmOrder = saveData.shopFilmOrder || [];
-
-            // Restore shelf from film IDs
-            this.shelf = saveData.shelf.map(filmId => {
-                if (filmId === null) return null;
-                return FILMS.find(f => f.id === filmId) || null;
-            });
-
-            return true;
+            await this.player.setData({ [this.STORAGE_KEY]: saveData });
         } catch (e) {
-            console.warn('Could not load progress:', e);
-            return false;
+            console.warn('Не удалось сохранить прогресс в облако', e);
         }
     }
 
@@ -631,6 +888,17 @@ class VHSTraderGame {
             localStorage.removeItem(this.STORAGE_KEY);
         } catch (e) {
             console.warn('Could not clear progress:', e);
+        }
+
+        this.clearCloudProgress();
+    }
+
+    async clearCloudProgress() {
+        if (!this.canWriteCloudSaves || !this.player?.setData) return;
+        try {
+            await this.player.setData({ [this.STORAGE_KEY]: null });
+        } catch (e) {
+            console.warn('Не удалось очистить облачное сохранение', e);
         }
     }
 

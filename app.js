@@ -189,47 +189,35 @@ class VHSTraderGame {
         const shelfFilmIds = this.shelf.filter(f => f !== null).map(f => f.id);
 
         let chosenRequests = [];
-        let usedRequestIndices = new Set();
+        const usedRequestIndices = new Set();
 
-        // 2. 50% linked to shelf
-        const linkedCount = Math.ceil(count / 2);
+        // 2.1: gather up to 4 requests linked to 4 different random shelf films (unique requests)
+        const shuffledFilms = [...shelfFilmIds].sort(() => Math.random() - 0.5).slice(0, 4);
+        shuffledFilms.forEach(filmId => {
+            if (chosenRequests.length >= count) return;
 
-        // Find requests that link to our shelf films
-        const linkedRequests = REQUESTS.filter((req, index) => {
-            // Check if this request links to ANY film we have on shelf
-            const hasLink = req.linkedFilmIds.some(id => shelfFilmIds.includes(id));
-            if (hasLink) return true;
-            return false;
+            const linked = REQUESTS
+                .map((req, idx) => ({ req, idx }))
+                .filter(({ req, idx }) => req.linkedFilmIds.includes(filmId) && !usedRequestIndices.has(idx));
+
+            if (linked.length === 0) return;
+
+            const { req, idx } = linked[Math.floor(Math.random() * linked.length)];
+            chosenRequests.push(req);
+            usedRequestIndices.add(idx);
         });
 
-        // Add random linked requests
-        const shuffledLinked = [...linkedRequests].sort(() => Math.random() - 0.5);
-
-        for (let req of shuffledLinked) {
-            if (chosenRequests.length >= linkedCount) break;
-
-            // Find original index to mark as used
-            const originalIndex = REQUESTS.indexOf(req);
-            if (!usedRequestIndices.has(originalIndex)) {
-                chosenRequests.push(req);
-                usedRequestIndices.add(originalIndex);
-            }
-        }
-
-        // 3. Remaining random requests (unique for today)
-        const remainingCount = count - chosenRequests.length;
+        // 2.2: fill remaining slots with random unique requests
         const allShuffled = [...REQUESTS].map((r, i) => ({ r, i })).sort(() => Math.random() - 0.5);
-
         for (let { r, i } of allShuffled) {
             if (chosenRequests.length >= count) break;
+            if (usedRequestIndices.has(i)) continue;
 
-            if (!usedRequestIndices.has(i)) {
-                chosenRequests.push(r);
-                usedRequestIndices.add(i);
-            }
+            chosenRequests.push(r);
+            usedRequestIndices.add(i);
         }
 
-        // 4. Shuffle the final list and add avatars
+        // Shuffle the final list and add avatars
         return chosenRequests
             .sort(() => Math.random() - 0.5)
             .map(request => ({

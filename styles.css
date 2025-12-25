@@ -153,11 +153,11 @@ body {
 
 #shelf {
     display: grid;
-    /* 5 columns x 2 rows = 10 slots. Fits 16:9 perfectly with portrait items */
+    /* 5 columns x 2 rows = 10 slots */
     grid-template-columns: repeat(5, 1fr);
     grid-template-rows: repeat(2, 1fr);
-    gap: 15px;
-    padding: 20px;
+    gap: 12px;
+    padding: 15px;
     background: linear-gradient(180deg, #3d2a5c 0%, var(--bg-shelf) 50%, #1a1025 100%);
     border-radius: 12px;
     border: 4px solid #4a3660;
@@ -166,10 +166,9 @@ body {
         0 5px 20px rgba(0, 0, 0, 0.8);
 
     width: 100%;
-    aspect-ratio: 16 / 9;
-    /* Force 16:9 for shelf itself as requested */
+    aspect-ratio: 5 / 3;
+    /* Более высокое соотношение для вытянутых ячеек */
     max-width: none;
-    /* Let it fill container */
     max-height: 100%;
 }
 
@@ -228,7 +227,6 @@ body {
     display: flex;
     flex-direction: column;
     min-height: 0;
-    overflow: hidden;
     background: linear-gradient(135deg, #2a2a3a 0%, #1a1a25 50%, #0a0a10 100%);
     border-radius: 4px;
     padding: 4px;

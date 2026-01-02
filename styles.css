@@ -692,6 +692,29 @@ body {
     margin-bottom: 25px;
 }
 
+/* === CONFIRM MODAL === */
+.confirm-content {
+    max-width: 400px;
+}
+
+.confirm-content h2 {
+    color: var(--neon-pink);
+    font-size: 18px;
+    margin-bottom: 15px;
+}
+
+.confirm-content p {
+    color: var(--text-secondary);
+    font-size: 16px;
+    margin-bottom: 25px;
+}
+
+.confirm-buttons {
+    display: flex;
+    gap: 15px;
+    justify-content: center;
+}
+
 /* === ANIMATIONS === */
 .sale-success {
     animation: successFlash 0.5s ease;

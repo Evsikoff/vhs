@@ -102,6 +102,11 @@ class VHSTraderGame {
         this.victoryMessage = document.getElementById('victory-message');
         this.btnRestart = document.getElementById('btn-restart');
 
+        // Confirm modal
+        this.confirmModal = document.getElementById('confirm-modal');
+        this.btnConfirmYes = document.getElementById('btn-confirm-yes');
+        this.btnConfirmNo = document.getElementById('btn-confirm-no');
+
         // Loading
         this.loadingOverlay = document.getElementById('loading-overlay');
         this.loadingStatusEl = document.getElementById('loading-status');
@@ -121,6 +126,10 @@ class VHSTraderGame {
         this.filterPrice.addEventListener('change', () => this.renderShopCatalog());
 
         this.btnRestart.addEventListener('click', () => this.restartGame());
+
+        // Confirm modal buttons
+        this.btnConfirmYes.addEventListener('click', () => this.handleConfirmYes());
+        this.btnConfirmNo.addEventListener('click', () => this.closeConfirmModal());
     }
 
     preventTextSelectionAndContextMenu() {
@@ -723,9 +732,31 @@ class VHSTraderGame {
     }
 
     confirmNewGame() {
-        if (confirm('Вы уверены? Весь прогресс будет потерян!')) {
+        // Check if player has any progress
+        if (this.hasProgress()) {
+            this.openConfirmModal();
+        } else {
+            // No progress - just start new game without confirmation
             this.restartGame();
         }
+    }
+
+    hasProgress() {
+        // Player has progress if: day > 1, sold anything, or has any balance
+        return this.day > 1 || this.soldTotal > 0 || this.balance > 0;
+    }
+
+    openConfirmModal() {
+        this.confirmModal.classList.remove('hidden');
+    }
+
+    closeConfirmModal() {
+        this.confirmModal.classList.add('hidden');
+    }
+
+    handleConfirmYes() {
+        this.closeConfirmModal();
+        this.restartGame();
     }
 
     restartGame() {
@@ -756,6 +787,7 @@ class VHSTraderGame {
         this.victoryModal.classList.add('hidden');
         this.filmModal.classList.add('hidden');
         this.shopModal.classList.add('hidden');
+        this.confirmModal.classList.add('hidden');
 
         // Reset UI
         this.btnStartDay.style.display = 'inline-block';
